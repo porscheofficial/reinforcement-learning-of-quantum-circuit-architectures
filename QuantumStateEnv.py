@@ -1,222 +1,213 @@
-import cProfile
-import numpy as np
+"""
+This module defines the QuantumStateEnv class, which provides an environment for
+the reinforcement learning agent to interact with a quantum system.
+
+The environment handles the simulation of a quantum state, application of quantum gates
+(actions), and calculation of energies (rewards).
+"""
+import logging
+import os
 from itertools import product
-from qulacs import Observable, QuantumCircuit, QuantumState
-from qulacs.gate import CZ, RX, RY, RZ, Identity
-from scipy.optimize import minimize
-from numpy import load
+from typing import Any, Dict, List, Tuple
+
+import numpy as np
+from qulacs import QuantumCircuit, QuantumState
+
 from hamiltonians.Ham_gen import Hamiltonian_generation
 from hamiltonians.JSP import JSP_generation
-import copy
-import os
-import tequila as tq
-
-"""
-Environment for executing actions and returning energies and states in the State Representation.
-"""
 
 
-#QuantumStateEnv
-class QuantumStateEnv():
+class QuantumStateEnv:
+    """
+    An environment that represents the state of a quantum system and allows an RL
+    agent to modify it by applying quantum gates.
+    """
 
-    def __init__(self,logger,cfg, main_folder,pred):
+    def __init__(self, logger: logging.Logger, cfg: Any, main_folder: str, pred: bool = False):
+        """
+        Initializes the quantum environment.
 
-        self.cfg=cfg
-        self.logger=logger
-        Ham_gen=Hamiltonian_generation(cfg,logger,main_folder)
-        JSP_Ham=JSP_generation(cfg,logger,main_folder)
-        self.molecule=cfg.characteristics["system"]
+        Args:
+            logger: A logger for recording information.
+            cfg: A configuration object containing system and training parameters.
+            main_folder: The root directory for data files.
+            pred: A flag indicating whether the environment is for prediction.
+        """
+        self.logger = logger
+        self.cfg = cfg
+        self.num_qubits = 0
+        self.max_gates = self.cfg.training["max_gates"]
+
+        self.hamiltonians, self.bond_distances = self._load_or_generate_hamiltonians(main_folder, pred)
+        self.num_qubits = int(np.log2(self.hamiltonians[0].shape[0]))
+        self.logger.info(f"System initialized with {self.num_qubits} qubits.")
+
+        self.r_embedding = self._create_gaussian_embedding(self.bond_distances) if len(self.bond_distances) > 1 else None
+        
+        self.state_size = self._calculate_state_size()
+        self.action_space, self.action_size = self._create_action_dictionary()
+
+    def _load_or_generate_hamiltonians(self, main_folder: str, pred: bool) -> Tuple[List[np.ndarray], List[float]]:
+        """Loads or generates the Hamiltonians for the specified molecule and bond distances."""
+        hamiltonian_path = os.path.join(main_folder, "molecule_data.npy")
+        molecule = self.cfg.characteristics["system"]
+        
         if pred:
             print("Hamiltonian generation can take up to a few minutes...")
-            self.bond_distance_range = np.arange(cfg.characteristics["start_bond_distance"], cfg.characteristics["end_bond_distance"], 0.01)
+            bond_distance_range = np.arange(
+                self.cfg.characteristics["start_bond_distance"],
+                self.cfg.characteristics["end_bond_distance"],
+                0.01
+            )
         else:
-            self.bond_distance_range = np.arange(cfg.characteristics["start_bond_distance"], cfg.characteristics["end_bond_distance"], cfg.characteristics["step_size_bond_distance"]) 
-        #path=os.path.join(main_folder, "molecule_data.npy")
-        path = os.path.join(main_folder, "molecule_data.npy")
-        if self.molecule=="H48" or self.molecule=="H48HF":
-            data=Ham_gen.generate_Hamiltonian_H48(self.bond_distance_range)
-            np.save(path,np.array(data, dtype=object))
-        elif self.molecule=="LiH4" or self.molecule=="LiH6":
-            data=Ham_gen.generate_Hamiltonian_LiH(self.bond_distance_range,self.molecule)
-            np.save(path,np.array(data, dtype=object))
-        elif self.molecule=="JSP":
-            data=JSP_Ham.JSP_ham(self.bond_distance_range)
-            np.save(path,np.array(data, dtype=object))
+            bond_distance_range = np.arange(
+                self.cfg.characteristics["start_bond_distance"],
+                self.cfg.characteristics["end_bond_distance"],
+                self.cfg.characteristics["step_size_bond_distance"]
+            )
+
+        if molecule in ["H48", "H48HF", "LiH4", "LiH6"]:
+            ham_gen = Hamiltonian_generation(self.cfg, self.logger, main_folder)
+            if "H4" in molecule:
+                data = ham_gen.generate_Hamiltonian_H4(bond_distance_range)
+            else: # LiH
+                data = ham_gen.generate_Hamiltonian_LiH(bond_distance_range, molecule)
+        elif molecule == "JSP":
+            jsp_ham_gen = JSP_generation(self.cfg, self.logger, main_folder)
+            data = jsp_ham_gen.JSP_ham(bond_distance_range)
         else:
-            self.logger.warning("Specified system is unknown. Currently known: H48, LiH4, LiH6, JSP.")
-
-        self.H = [entry[0] for entry in data]  
-
-        self.bond_distances= [entry[2] for entry in data]  
-
-        if len(self.bond_distance_range)!=1:
-            self.r_embedding=self.r_to_embedding(self.bond_distances)
-    
-        self.num_qubits = int(np.log2(np.shape(self.H[0])[0]))
-        self.logger.info(f"Qubits: {self.num_qubits}")
-        #QUANTUM STATE SIZE: size of the state (networks need to know it as input size), +1 for the layer information
-        if len(self.bond_distance_range)!=1:
-            self.state_size=2*(2**self.num_qubits)+1+len(self.r_embedding[0])
-        else:
-            self.state_size=2*(2**self.num_qubits)+1
-        #CIRCUIT SIZE (row size +1 entry for the layer) * maximal number of gates
-        self.max_gates= self.cfg.training["max_gates"]    
+            self.logger.warning(f"Specified system '{molecule}' is unknown.")
+            raise ValueError(f"Unknown system: {molecule}")
         
-
-        #initalize the qulacs state (needed to apply gates with qulacs)
-        self.qustate=QuantumState(self.num_qubits) #QuantumState
-
-        #initialize the qulacs state as numpy-array
-        self.state= self.qustate.get_vector()  #QuantumState as nparray
-       
-        #dictionary of actions
-        self.dictionary,self.action_size=self.dictionary()
-      
-
-
-    #DICTIONARY OF ACTIONS
-    '''Generates the dictionary of actions, each action is described by an array: [control qubit c, target qubit x, rotation qubit r, rotation axis h]
-    rotation axis: 1-> X, 2-> Y, 3-> Z
-    --> if control qubit= num_qubits: no CNOT gate
-    --> if rotation gate qubit= num_qubits: no Rotation gate
-    --> if control qubit=num_qubits and rotation gate qubit= num qubits: Identity
-    EXAMPLES (num_qubits=4): [4,0,0,3]: --> apply RZ on qubit 0, [1,2,0,0]: --> apply CNOT on control qubit 1 and target qubit 2
-    '''
-
-    #This function generates the dictionary of actions:
-    def dictionary(self):
+        np.save(hamiltonian_path, np.array(data, dtype=object))
         
-        #generate self.dictionary of actions 
-        self.dictionary = dict()
-        i = 0    
+        hamiltonians = [entry[0] for entry in data]
+        bond_distances = [entry[2] for entry in data]
+        return hamiltonians, bond_distances
 
+    def _calculate_state_size(self) -> int:
+        """Calculates the size of the state representation for the neural network."""
+        base_state_size = 2 * (2**self.num_qubits) + 1  # Real and imaginary parts + layer info
+        if self.r_embedding is not None:
+            return base_state_size + len(self.r_embedding[0])
+        return base_state_size
 
-       
-        #CNOT actions
+    def _create_action_dictionary(self) -> Tuple[Dict[int, List[int]], int]:
+        """
+        Generates the dictionary of possible actions (quantum gates).
+
+        Returns:
+            A tuple containing the action dictionary and the number of actions.
+        """
+        action_dict = {}
+        action_id = 0
+
+        # CNOT gates
         for c in range(self.num_qubits):
             for x in range(self.num_qubits):
-                #no CNOT(0,0), CNOT(1,1),..
-                if c!=x:
-                    self.dictionary[i] =  [c, x, self.num_qubits, 0]
-                    i += 1
+                if c != x:
+                    action_dict[action_id] = [c, x, self.num_qubits, 0]  # [ctrl, target, rot_q, rot_axis]
+                    action_id += 1
         
-        #Rotation gate actions
-        for r, h in product(range(self.num_qubits),
-                range(1, 4)):
-            self.dictionary[i] = [self.num_qubits, 0, r, h]
-            i += 1
+        # Rotation gates (RX, RY, RZ)
+        for r, h in product(range(self.num_qubits), range(1, 4)):
+            action_dict[action_id] = [self.num_qubits, 0, r, h]
+            action_id += 1
+            
+        return action_dict, action_id
+
+    def step(self, quantum_state: QuantumState, action: int, angle: float,
+             circuit: QuantumCircuit, layer_index: int, layer_scale: List[float],
+             bond_distance_index: int) -> Tuple[np.ndarray, QuantumState, QuantumCircuit]:
+        """
+        Applies a gate to the quantum state and returns the new state representation.
+        """
+        gate_params = self.action_space[action]
+        control_qubit, target_qubit, rotation_qubit, rotation_axis = gate_params
+
+        if control_qubit != self.num_qubits:  # It's a CNOT gate
+            circuit.add_CNOT_gate(control_qubit, target_qubit)
+        elif rotation_qubit != self.num_qubits:  # It's a rotation gate
+            if rotation_axis == 1:
+                circuit.add_RX_gate(rotation_qubit, angle)
+            elif rotation_axis == 2:
+                circuit.add_RY_gate(rotation_qubit, angle)
+            elif rotation_axis == 3:
+                circuit.add_RZ_gate(rotation_qubit, angle)
         
- 
-      
-        number_of_actions=i-1
-     
+        # Update the quantum state by applying the new circuit
+        new_quantum_state = QuantumState(self.num_qubits)
+        circuit.update_quantum_state(new_quantum_state)
 
-        return self.dictionary,number_of_actions
+        # Create the state representation for the neural network
+        state_vector = new_quantum_state.get_vector()
+        nn_state = np.concatenate([np.real(state_vector), np.imag(state_vector)])
+        
+        output_state = np.concatenate([nn_state, [layer_scale[layer_index]]])
+        if self.r_embedding is not None:
+            output_state = np.concatenate([output_state, self.r_embedding[bond_distance_index]])
 
-    
-  
+        return output_state, new_quantum_state, circuit
 
-    ###################################################
+    def get_energy(self, quantum_state: QuantumState, index: int) -> float:
+        """Calculates the expectation value (energy) of the quantum state."""
+        state_vector = quantum_state.get_vector()
+        energy = np.real(np.vdot(state_vector, np.dot(self.hamiltonians[index], state_vector)))
+        return energy
 
-    #This function applies the chosen action (=gate) on the state:
-    def step(self,qustate,chosed_action,angle_action,current_qucircuit,i,layer_scale,index):
-
-        #apply CNOT gate if the first position of the action array does not equal num qubits
-        if self.dictionary[chosed_action][0]!=self.num_qubits:
-            current_qucircuit.add_CNOT_gate(self.dictionary[chosed_action][0],self.dictionary[chosed_action][1])
-            
-        #Apply rotation-gate if third position of the action array does not equal num_qubit
-        elif self.dictionary[chosed_action][2]!=self.num_qubits:
-            angle=[angle_action]#angle initialization
-            #Which rotation axis? Build  circuit
-            if self.dictionary[chosed_action][3]==1:
-                current_qucircuit.add_RX_gate(self.dictionary[chosed_action][2],angle[0])
-               
-            elif self.dictionary[chosed_action][3]==2:
-                current_qucircuit.add_RY_gate(self.dictionary[chosed_action][2],angle[0])
-                
-            elif self.dictionary[chosed_action][3]==3:
-                current_qucircuit.add_RZ_gate(self.dictionary[chosed_action][2],angle[0])
-                
-            
-        #Update the qulacs quantities
-        qustate=QuantumState(self.num_qubits)
-        current_qucircuit.update_quantum_state(qustate)
-
-
-    
-        #QUANTUM STATE REPRESENTATION
-        #get quantum state as numpy array
-        state = qustate.get_vector()
-        #separate real and imaginary part for the neural net (which can't handle complex numbers)
-        nnstate=np.stack([np.real(state),np.imag(state)]).flatten()
-        #add the information about the current layer
-        outputstate=np.concatenate((nnstate, [layer_scale[i]]))
-        #Lastly the information about the bond distance is added, using the embedding function "r_to_embedding"
-        if len(self.bond_distance_range)!=1:
-            outputstate=np.concatenate((outputstate, self.r_embedding[index]))
-
-        return outputstate,qustate,current_qucircuit
-    
-       
-
-    #This function calculates the expectation value, i.e energy, currently calculated with the qulacs function for expectation value:
-    def get_energy(self,qustate, index):
-        state = qustate.get_vector()
-        E = np.real(np.vdot(state,np.dot(self.H[index],state)))
-        return E
-    
-  
-
-    
-    #define the function that, given the bond distance r, return the value of the embeddings in such point (an array 
-    #of $n$ elements, for each $k$)
-    def r_to_embedding(self,r):
-        r=np.array(r)
-        n = self.cfg.gaussian_encoding["number_of_embeddings"]    #number of embeddings
-        a = self.cfg.gaussian_encoding["start_interval"]       #left side of the interval
-        b = self.cfg.gaussian_encoding["end_interval"]     #right side of the interval
-        #crete average of the gaussian for each k
+    def _create_gaussian_embedding(self, r_values: List[float]) -> np.ndarray:
+        """Creates a Gaussian embedding for the bond distances."""
+        r = np.array(r_values)
+        n = self.cfg.gaussian_encoding["number_of_embeddings"]
+        a = self.cfg.gaussian_encoding["start_interval"]
+        b = self.cfg.gaussian_encoding["end_interval"]
+        
         mu_k = np.linspace(a, b, n)
-        #create a standard deviation that is the same for all gaussians
         sigma = (b - a) / n
+        
         return np.exp(-0.5 * ((r[:, np.newaxis] - mu_k) / sigma) ** 2)
 
+    def _get_initial_circuit(self) -> QuantumCircuit:
+        """Creates the initial quantum circuit based on the configuration."""
+        circuit = QuantumCircuit(self.num_qubits)
+        hf_start = self.cfg.characteristics.get("hf_start")
+        system = self.cfg.characteristics.get("system")
 
-    #This function resets the variables for a new episode:
-    def reset(self,index):
-        current_qucircuit=QuantumCircuit(self.num_qubits)
-        if self.cfg.characteristics["hf_start"]=="HF" and self.cfg.characteristics["system"]=="LiH4":
-            current_qucircuit.add_X_gate(1)
-            current_qucircuit.add_X_gate(0)
-        elif self.cfg.characteristics["hf_start"]=="WS" and self.cfg.characteristics["system"]=="LiH4":
-            current_qucircuit.add_X_gate(3)
-            current_qucircuit.add_X_gate(2)
-        elif self.cfg.characteristics["hf_start"]=="HF" and self.cfg.characteristics["system"]=="LiH6":
-            current_qucircuit.add_X_gate(0)
-            current_qucircuit.add_X_gate(3)
-        elif self.cfg.characteristics["hf_start"]=="WS" and self.cfg.characteristics["system"]=="LiH6":
-            current_qucircuit.add_X_gate(2)
-            current_qucircuit.add_X_gate(5)
-        elif self.cfg.characteristics["hf_start"]=="HF" and self.cfg.characteristics["system"]=="H48":
-            current_qucircuit.add_X_gate(7)  
-            current_qucircuit.add_X_gate(6)  
-            current_qucircuit.add_X_gate(3)  
-            current_qucircuit.add_X_gate(2)  
-        elif self.cfg.characteristics["hf_start"]=="WS" and self.cfg.characteristics["system"]=="H48":
-            current_qucircuit.add_X_gate(0)  
-            current_qucircuit.add_X_gate(1)  
-            current_qucircuit.add_X_gate(5)  
-            current_qucircuit.add_X_gate(4)     
-        qustate=QuantumState(self.num_qubits)
-        current_qucircuit.update_quantum_state(qustate)
-        state = qustate.get_vector()
-        current_circuit=[]
-        angles=[]
-        #Initialize Quantum State representation
-        nnstate=np.stack([np.real(state),np.imag(state)]).flatten()
-        outputstate=np.concatenate((nnstate, [-1]))
-        if len(self.bond_distance_range)!=1:
-            outputstate=np.concatenate((outputstate, self.r_embedding[index]))
+        initial_states = {
+            ("HF", "LiH4"): [(1, True), (0, True)],
+            ("WS", "LiH4"): [(3, True), (2, True)],
+            ("HF", "LiH6"): [(0, True), (3, True)],
+            ("WS", "LiH6"): [(2, True), (5, True)],
+            ("HF", "H48"): [(7, True), (6, True), (3, True), (2, True)],
+            ("WS", "H48"): [(0, True), (1, True), (5, True), (4, True)],
+        }
+
+        gates_to_add = initial_states.get((hf_start, system), [])
+        for qubit, is_x_gate in gates_to_add:
+            if is_x_gate:
+                circuit.add_X_gate(qubit)
+        
+        return circuit
+
+    def reset(self, index: int) -> Tuple[np.ndarray, QuantumState, QuantumCircuit, List, List]:
+        """
+        Resets the environment to an initial state for a new episode.
+        """
+        initial_circuit = self._get_initial_circuit()
+        
+        quantum_state = QuantumState(self.num_qubits)
+        initial_circuit.update_quantum_state(quantum_state)
+        
+        state_vector = quantum_state.get_vector()
+        
+        # Initialize state representation for the neural network
+        nn_state = np.concatenate([np.real(state_vector), np.imag(state_vector)])
+        
+        # Use a consistent layer scaling for the initial state
+        layer_scale = [-1.0] + list(np.linspace(-1, 1, self.max_gates + 1))
+        
+        output_state = np.concatenate([nn_state, [layer_scale[0]]])
+        if self.r_embedding is not None:
+            output_state = np.concatenate([output_state, self.r_embedding[index]])
      
-        return outputstate,qustate,current_qucircuit,current_circuit,angles
+        return output_state, quantum_state, initial_circuit, [], []

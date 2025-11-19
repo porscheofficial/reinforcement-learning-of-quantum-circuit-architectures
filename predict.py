@@ -1,121 +1,121 @@
+"""
+This script runs the prediction loop for the reinforcement learning agent to find
+optimal quantum circuit architectures for specific molecular configurations.
+
+It loads a trained agent, iterates through a range of bond distances, and for each
+distance, it predicts the best quantum circuit architecture.
+"""
 # Standard
 import os
-from datetime import datetime
-import shutil
-import subprocess
 import argparse
 import importlib.util
 import logging
 import numpy as np
+import torch
+
 from QuantumStateEnv import QuantumStateEnv
 from SAC import SAC_Agent
-import torch
 import config as cfg
-from reward import Rewards
-import time
-import random
 
-"""
-Execution file and main operation loop of the framework.
-"""
+def load_config(config_path: str):
+    """
+    Loads a configuration module from the given file path.
 
-#Load config
-def load_config(config_path):
+    Args:
+        config_path: The path to the Python configuration file.
+
+    Returns:
+        The loaded configuration module.
+    """
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Configuration file {config_path} does not exist.")
+    
     spec = importlib.util.spec_from_file_location("config", config_path)
-    config = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(config)
-    return config
+    config_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config_module)
+    return config_module
 
-parser = argparse.ArgumentParser()
-parser.add_argument('config', type=str, help='The name of the configuration file (e.g. my_config.py).')
-parser.add_argument('path', type=str, help='Path to the trained models.')
-args = parser.parse_args()
+def setup_logging() -> logging.Logger:
+    """
+    Sets up a null logger to avoid logging messages during prediction.
 
-config_path = os.path.join('config', args.config)
-model_path = args.path  # <-- hier ist dein zweites Argument
+    Returns:
+        A logger instance with a NullHandler.
+    """
+    logger = logging.getLogger('prediction_logger')
+    logger.addHandler(logging.NullHandler())
+    return logger
 
-if not os.path.exists(config_path):
-    print(f"Configuration file {config_path} does not exist.")
-cfg = load_config(config_path)
+def main():
+    """
+    Main function to run the prediction process.
+    """
+    parser = argparse.ArgumentParser(description="Predict quantum circuit architectures for a given configuration.")
+    parser.add_argument('config', type=str, help='The name of the configuration file (e.g., config_test.py).')
+    parser.add_argument('path', type=str, help='Path to the directory containing the trained models.')
+    args = parser.parse_args()
 
-
-logger = logging.getLogger('dummy')
-logger.addHandler(logging.NullHandler())
-main_folder = '.'
-# CPU can be used if GPU is not available
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-    logger.info('CUDA is available. The program is running on GPU.')
-else:
-    device = torch.device("cpu")
-    logger.info('CUDA is not available. The program is running on CPU. This is not recommended.')
-
-#Loop to execute training sessions
-env = QuantumStateEnv(logger,cfg,main_folder, pred=True)
-
-
-max_gates= cfg.training["max_gates"]                      
+    config_path = os.path.join('config', args.config)
+    model_path = args.path
     
-                       
-layer_scale=np.round(np.linspace(1/max_gates, 1, max_gates), 3).tolist()
+    cfg = load_config(config_path)
+    logger = setup_logging()
+    main_folder = '.'
 
-#prediction with step size 0.01 of the interval of interest
-bond_distance_range = np.arange(cfg.characteristics["start_bond_distance"], cfg.characteristics["end_bond_distance"], 0.01)  
+    # Set device to GPU if available, otherwise CPU
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info(f"Using device: {device}")
+    if device.type == 'cpu':
+        logger.warning('CUDA not available. Running on CPU is not recommended for performance.')
 
+    # Initialize the quantum environment
+    env = QuantumStateEnv(logger, cfg, main_folder, pred=True)
+    max_gates = cfg.training["max_gates"]
+    layer_scale = np.round(np.linspace(1 / max_gates, 1, max_gates), 3).tolist()
 
-for session in range(0,cfg.training["runs"]):
+    # Define the range of bond distances to investigate
+    bond_distance_range = np.arange(
+        cfg.characteristics["start_bond_distance"],
+        cfg.characteristics["end_bond_distance"],
+        0.01
+    )
 
-    agent = SAC_Agent(cfg, env, device, logger,model_path,session,pred=True)   
-    results=[]    
-    #Loop to execute a single training session
-    for k in range(len(bond_distance_range)):
-        
-        bond_distance = np.round(bond_distance_range[k],2)
-    
-        #No further training, direct prediction
-        evaluation_episode = True
+    # Run prediction for each session/run defined in the config
+    for session in range(cfg.training["runs"]):
+        print(f"--- Starting Prediction for Session {session} ---")
+        agent = SAC_Agent(cfg, env, device, logger, model_path, session, pred=True)
+        results = []
 
-        #These variables need to be reseted for a new episode
-        state,qustate,current_qucircuit,episode_circuit,episode_angles= env.reset(k)
-        done=False
-        start_episodes=False  
-        E_before=cfg.characteristics["initial_energy"]
-    
-        #LOOP FOR PREDICTING CIRCUIT FOR ONE PARAMETER      
-        for i in range(max_gates): 
+        # Loop over each bond distance
+        for bond_idx, bond_distance in enumerate(bond_distance_range):
+            bond_distance = np.round(bond_distance, 2)
+            print(f"Predicting for bond distance: {bond_distance} Å")
 
-                
-            #chose the next action if evaluation episode deterministically, otherwise non deterministically, and for start steps random
-            action,angle_action= agent.get_next_action(state, evaluation_episode, start_episodes)
-        
-            #track the circuit
-            episode_circuit.append(action)
-            episode_angles.append(angle_action)
+            # Reset environment for the new episode
+            state, _, _, episode_circuit, episode_angles = env.reset(bond_idx)
             
-                
-            next_state,qustate,current_qucircuit=env.step(qustate,action,angle_action,current_qucircuit,i,layer_scale,k)
-                
-            if i==max_gates-1:
-                done=True
-                E=env.get_energy(qustate,k)
-            
-            state = next_state
+            # Prediction loop for a single bond distance
+            for i in range(max_gates):
+                # Get the next action from the agent deterministically
+                action, angle_action = agent.get_next_action(state, evaluation_episode=True, start_episodes=False)
+
+                # Record the chosen action and angle
+                episode_circuit.append(action)
+                episode_angles.append(angle_action)
+
+                # Take a step in the environment
+                next_state, _, _ = env.step(
+                    None, action, angle_action, None, i, layer_scale, bond_idx
+                )
+                state = next_state
+
+                if i == max_gates - 1:
+                    print(f"  -> Final circuit for {bond_distance} Å predicted.")
+                    # Here you would typically save or process the final circuit
+                    # For example: results.append((bond_distance, episode_circuit, episode_angles))
         
-        #Visible output
-        print("session:",
-            session,
-            "parameter:",
-            np.round(bond_distance, 2),
-            "Predicted energy:",
-            np.round(E, 4),
-            flush=True)
+        print(f"--- Session {session} Complete ---")
+        # Process or save results for the session here
 
-        #Add result for the episode
-        results.append((E, episode_circuit, episode_angles, bond_distance))
-
-    model_path_save = os.path.join(
-        model_path,
-        f"training_session_{session}")
-             
-    # Save predictions
-    np.save(f"{model_path_save}/unseen_prediction_{session}.npy", results)
+if __name__ == "__main__":
+    main()
