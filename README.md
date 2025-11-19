@@ -116,7 +116,7 @@ Jupyter notebooks and corresponding molecular data for plotting single-distance 
 
 The Porsche Open Source Platform is openly developed in the wild and contributions (both internal and external) are highly appreciated. See [CONTRIBUTING.md](CONTRIBUTING.md) on how to get started.
 
-If you have feedback or want to propose a new feature, please [open an issue](https://github.com/Alissa-H-Wilms/RLVQE/issues/new), which will then be monitored/prioritized in our open [GitHub Project board].
+If you have feedback or want to propose a new feature, please [open an issue](https://github.com/porscheofficial/reinforcement-learning-of-quantum-circuit-architectures/issues/new), which will then be monitored/prioritized in our open [GitHub Project board].
 
 ## 🙌 Acknowledgements
 
