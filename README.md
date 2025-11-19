@@ -44,7 +44,6 @@ This code is implemented in Python 3.11.2 and optimized for execution with CUDA 
 ### Step 1: Clone the Repository
 ```
 git clone https://github.com/porscheofficial/reinforcement-learning-of-quantum-circuit-architectures
-cd RLVQE
 ```
 
 ### Step 2: Set Up the Environment
