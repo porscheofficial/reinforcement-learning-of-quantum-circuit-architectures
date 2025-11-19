@@ -1,0 +1,60 @@
+training= {
+    "max_episodes": 40000,
+    "max_gates": 12,
+    "train_evaluate_ratio": 10,
+    "random_episodes": 100,
+    "runs": 4,
+    "results_folder_name": "LiH6_22"
+}
+
+characteristics= {
+    "rl_state": 0,
+    "system": "LiH6",
+    "ham_check": "on",
+    "hf_start": "WS",
+    "start_bond_distance": 2.2, 
+    "end_bond_distance": 2.3, 
+    "step_size_bond_distance": 0.2,
+    "initial_energy": -7,
+}
+
+reward= {
+    "reward": "exp_moving",
+    "mu_average": 50,
+    "sigma_average": 70,
+    "sigma_min": 0.005,
+    "c_lin": 0.1,
+    "c_exp": 5
+}
+
+gaussian_encoding= {
+    "number_of_embeddings": 6,    
+    "start_interval": 1 ,    
+    "end_interval": 4
+}
+
+SACparam={
+    "batch_size": 512,
+    "gamma": 1,
+    "lr_critic": 0.001,
+    "lr_actor": 0.001,
+    "lr_alpha_d": 0.003,
+    "lr_alpha_c": 0.003,
+    "decay_factor_c": 2.25,
+    "decay_factor_d": 1.25,
+    "soft_update_factor": 0.005,
+    "training_update_factor": 50,
+    "target_entropy_deduction_d": 0.3,
+    "target_entropy_deduction_c": 0.1,
+    "target_entropy_end_value_d": 0.5,
+    "target_entropy_end_value_c": -2
+}
+
+NeuralNet={
+    "hidden_layers_actor":  [256,128],
+    "hidden_layers_critic":  [256,128,128]
+}  
+
+RBparam={
+    "capacity": 24000
+}

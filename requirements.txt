@@ -1,0 +1,11 @@
+openfermion
+scipy
+qiskit==0.45.0
+qiskit-nature==0.7.0
+tequila-basic
+pyscf
+torch
+numpy
+matplotlib
+qulacs
+qiskit-algorithms==0.2.1
