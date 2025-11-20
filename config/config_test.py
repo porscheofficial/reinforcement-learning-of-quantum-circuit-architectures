@@ -15,6 +15,7 @@ training = {
     "results_folder_name": "Test"
 }
 
+<<<<<<< Updated upstream
 # --- System and Environment Characteristics ---
 characteristics = {
     "system": "LiH4",
@@ -22,6 +23,16 @@ characteristics = {
     "start_bond_distance": 2.0,
     "end_bond_distance": 2.2,
     "step_size_bond_distance": 0.1,
+=======
+characteristics= {
+    "rl_state": 0,
+    "system": "JSP",
+    "ham_check": "off",
+    "hf_start": "HF",
+    "start_bond_distance": 2.0, 
+    "end_bond_distance": 4.0, 
+    "step_size_bond_distance": 1.0,
+>>>>>>> Stashed changes
     "initial_energy": -7,
 }
 
