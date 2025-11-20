@@ -1,9 +1,4 @@
-"""
-Configuration for Training Run 4: LiH6 Molecule, wide bond distance scan (1.1-4.0 Å).
-"""
-
-# --- Training Parameters ---
-training = {
+training= {
     "max_episodes": 50000,
     "max_gates": 12,
     "train_evaluate_ratio": 10,
@@ -12,49 +7,56 @@ training = {
     "results_folder_name": "LiH6_T"
 }
 
-# --- System and Environment Characteristics ---
-characteristics = {
+characteristics= {
+    "rl_state": 0,
     "system": "LiH6",
+    "ham_check": "on",
     "hf_start": "WS",
-    "start_bond_distance": 1.1,
-    "end_bond_distance": 4.0,
+    "start_bond_distance": 1.1, 
+    "end_bond_distance": 4.0, 
     "step_size_bond_distance": 0.1,
     "initial_energy": -7,
 }
 
-# --- Reward Function Parameters ---
-reward = {
+reward= {
+    "reward": "exp_moving",
+    "mu_average": 30,
+    "sigma_average": 50,
     "sigma_min": 0.0125,
     "c_lin": 0.1,
-    "c_exp": 5,
-    "alpha": 0.1
+    "c_exp": 5
 }
 
-# --- Gaussian Encoding for Bond Distance ---
-gaussian_encoding = {
-    "number_of_embeddings": 6,
-    "start_interval": 1,
+gaussian_encoding= {
+    "number_of_embeddings": 6,    
+    "start_interval": 1 ,    
     "end_interval": 4
 }
 
-# --- Soft Actor-Critic (SAC) Hyperparameters ---
-SACparam = {
+SACparam={
     "batch_size": 512,
     "gamma": 1,
     "lr_critic": 0.001,
     "lr_actor": 0.001,
     "lr_alpha_d": 0.003,
     "lr_alpha_c": 0.003,
+    "decay_factor_c": 2,
+    "decay_factor_d": 1,
     "soft_update_factor": 0.005,
     "training_update_factor": 50,
     "target_entropy_deduction_d": 0.4,
     "target_entropy_deduction_c": 0.2,
+    "target_entropy_end_value_d": 0.5,
+    "target_entropy_end_value_c": -2
 }
 
-# --- Neural Network Architecture ---
-NeuralNet = {
-    "hidden_layers_critic": [256, 256],
-    "hidden_layers_actor": [256, 256]
+NeuralNet={
+    "hidden_layers_actor":  [256,128],
+    "hidden_layers_critic":  [256,128,128]
+}  
+
+RBparam={
+    "capacity": 36000
 }
 
 
