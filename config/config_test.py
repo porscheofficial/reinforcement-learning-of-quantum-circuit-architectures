@@ -9,11 +9,11 @@ training= {
 
 characteristics= {
     "rl_state": 0,
-    "system": "JSP",
+    "system": "LiH4",
     "ham_check": "off",
     "hf_start": "HF",
     "start_bond_distance": 2.0, 
-    "end_bond_distance": 4.0, 
+    "end_bond_distance": 2.3, 
     "step_size_bond_distance": 1.0,
     "initial_energy": -7,
 }
