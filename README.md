@@ -121,7 +121,7 @@ Jupyter notebooks and corresponding molecular data for plotting single-distance 
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) on how to get started.
 
-If you have feedback or want to propose a new feature, please [open an issue](https://github.com/porscheofficial/reinforcement-learning-of-quantum-circuit-architectures/issues/new), which will then be monitored/prioritized in our open [GitHub Project board].
+If you have feedback or want to propose a new feature, please [open an issue](https://github.com/porscheofficial/reinforcement-learning-of-quantum-circuit-architectures/issues/new). Thank you! 
 
 ## 🙌 Acknowledgements
 
