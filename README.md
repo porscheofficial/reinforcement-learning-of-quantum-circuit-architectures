@@ -131,6 +131,4 @@ This project is a joint initiative of [Porsche AG](https://www.porsche.com/) and
 
 Copyright © 2025 Dr. Ing. h.c. F. Porsche AG
 
-Dr. Ing. h.c. F. Porsche AG publishes the Porsche Open Source Platform software and accompanied documentation (if any) subject to the terms of the [MIT license](https://opensource.org/licenses/MIT). All rights not explicitly granted to you under the MIT license remain the sole and exclusive property of Dr. Ing. h.c. F. Porsche AG.
-
-Apart from the software and documentation described above, the texts, images, graphics, animations, video and audio files as well as all other contents on this website are subject to the legal provisions of copyright law and, where applicable, other intellectual property rights. The aforementioned proprietary content of this website may not be duplicated, distributed, reproduced, made publicly accessible or otherwise used without the prior consent of the right holder.
+Dr. Ing. h.c. F. Porsche AG publishes this software and accompanied documentation (if any) under the terms of the [MIT license](https://github.com/porscheofficial/reinforcement-learning-of-quantum-circuit-architectures/blob/main/LICENSE.md). All rights not explicitly granted to you under the MIT license remain the sole and exclusive property of Dr. Ing. h.c. F. Porsche AG.
