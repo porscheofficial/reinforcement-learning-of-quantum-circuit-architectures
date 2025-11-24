@@ -1,6 +1,6 @@
 openfermion
 scipy
-qiskit==0.45.0
+qiskit==1.4.2
 qiskit-nature==0.7.0
 tequila-basic
 pyscf
